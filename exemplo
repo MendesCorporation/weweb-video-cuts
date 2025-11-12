@@ -1,0 +1,603 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { fetchFile } from "@ffmpeg/util";
+
+const SOURCE_URL = (import.meta.env.VITE_SOURCE_VIDEO_URL as string) ?? "";
+const MAX_CLIP_DURATION_SEC = (() => {
+  const raw = Number(import.meta.env.VITE_CLIP_MAX_DURATION);
+  return Number.isFinite(raw) && raw > 0 ? raw : 10;
+})();
+const MIN_CLIP_DURATION_SEC = 0.5;
+const WATERMARK_LABEL =
+  (import.meta.env.VITE_WATERMARK_LABEL as string) ?? "Preview";
+
+const ffmpeg = new FFmpeg();
+let ffmpegLoadingPromise: Promise<void> | null = null;
+
+function formatSeconds(value: number): string {
+  if (!Number.isFinite(value)) return "0:00";
+  const clamped = Math.max(0, value);
+  const minutes = Math.floor(clamped / 60);
+  const seconds = Math.floor(clamped % 60)
+    .toString()
+    .padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+type DragState =
+  | null
+  | {
+      type: "start" | "end" | "selection";
+      pointerId: number;
+      startAt: number;
+      endAt: number;
+      initialClientX: number;
+    };
+
+const App = () => {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
+  const [duration, setDuration] = useState<number | null>(null);
+  const [startTime, setStartTime] = useState(0);
+  const [clipDuration, setClipDuration] = useState(MAX_CLIP_DURATION_SEC);
+  const [ffmpegReady, setFfmpegReady] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [progressPercent, setProgressPercent] = useState<number | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [dragState, setDragState] = useState<DragState>(null);
+
+  const syncPreviewTo = useCallback(
+    (time: number) => {
+      const video = videoRef.current;
+      if (!video) return;
+      const mediaDuration =
+        duration ??
+        (Number.isFinite(video.duration) && video.duration > 0
+          ? video.duration
+          : null);
+      const upperBound =
+        mediaDuration !== null && mediaDuration !== undefined && mediaDuration > 0
+          ? mediaDuration
+          : time;
+      const clamped = Math.min(Math.max(time, 0), upperBound);
+      if (!Number.isFinite(clamped)) return;
+      video.pause();
+      try {
+        video.currentTime = clamped;
+      } catch {
+        /* noop */
+      }
+    },
+    [duration]
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const logListener = ({ message }: { message: string }) => {
+      if (!isMounted || !message) return;
+      setStatusMessage(message);
+    };
+
+    const progressListener = ({ progress }: { progress: number }) => {
+      if (!isMounted) return;
+      setProgressPercent(Math.round(progress * 100));
+    };
+
+    ffmpeg.on("log", logListener);
+    ffmpeg.on("progress", progressListener);
+
+    return () => {
+      isMounted = false;
+      ffmpeg.off("log", logListener);
+      ffmpeg.off("progress", progressListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!downloadUrl) return;
+    return () => {
+      URL.revokeObjectURL(downloadUrl);
+    };
+  }, [downloadUrl]);
+
+  useEffect(() => {
+    if (duration === null) return;
+
+    const boundedClip = Math.min(clipDuration, MAX_CLIP_DURATION_SEC, duration);
+    if (clipDuration !== boundedClip) {
+      setClipDuration(boundedClip);
+    }
+
+    const maxStart = Math.max(duration - boundedClip, 0);
+    if (startTime > maxStart) {
+      setStartTime(maxStart);
+      syncPreviewTo(maxStart);
+    } else if (startTime < 0) {
+      setStartTime(0);
+      syncPreviewTo(0);
+    }
+  }, [duration, clipDuration, startTime, syncPreviewTo]);
+
+  const effectiveMinClip = useMemo(() => {
+    const base = Math.min(MIN_CLIP_DURATION_SEC, MAX_CLIP_DURATION_SEC);
+    if (duration === null || duration <= 0) {
+      return base;
+    }
+    return Math.min(base, duration);
+  }, [duration]);
+
+  const currentEnd = useMemo(() => {
+    if (duration === null) return 0;
+    return Math.min(startTime + clipDuration, duration);
+  }, [startTime, clipDuration, duration]);
+
+  useEffect(() => {
+    if (!dragState || duration === null) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== dragState.pointerId) return;
+
+      const rect = timelineRef.current?.getBoundingClientRect();
+      if (!rect || rect.width === 0) return;
+
+      if (dragState.type === "selection") {
+        const deltaRatio =
+          (event.clientX - dragState.initialClientX) / rect.width;
+        const deltaTime = deltaRatio * duration;
+        const selectionLength = Math.min(
+          dragState.endAt - dragState.startAt,
+          MAX_CLIP_DURATION_SEC,
+          duration
+        );
+        let newStart = dragState.startAt + deltaTime;
+        let newEnd = dragState.endAt + deltaTime;
+
+        if (newStart < 0) {
+          newEnd -= newStart;
+          newStart = 0;
+        }
+        if (newEnd > duration) {
+          const overshoot = newEnd - duration;
+          newStart -= overshoot;
+          newEnd = duration;
+        }
+
+        const maxStartByDuration = Math.max(duration - selectionLength, 0);
+        newStart = Math.min(Math.max(newStart, 0), maxStartByDuration);
+        setStartTime(newStart);
+        const adjustedDuration = Math.min(
+          Math.max(selectionLength, effectiveMinClip),
+          MAX_CLIP_DURATION_SEC,
+          duration
+        );
+        setClipDuration(adjustedDuration);
+        syncPreviewTo(newStart);
+        return;
+      }
+
+      const ratio = (event.clientX - rect.left) / rect.width;
+      const clampedRatio = Math.min(Math.max(ratio, 0), 1);
+      const absoluteTime = clampedRatio * duration;
+
+      if (dragState.type === "start") {
+        const endAt = currentEnd;
+        const minStart = Math.max(endAt - MAX_CLIP_DURATION_SEC, 0);
+        const maxStart = Math.min(endAt - effectiveMinClip, endAt);
+        if (maxStart <= minStart) return;
+        const newStart = Math.min(Math.max(absoluteTime, minStart), maxStart);
+        const newDuration = Math.min(
+          Math.max(endAt - newStart, effectiveMinClip),
+          MAX_CLIP_DURATION_SEC,
+          Math.max(duration - newStart, effectiveMinClip)
+        );
+        setStartTime(newStart);
+        setClipDuration(newDuration);
+        syncPreviewTo(newStart);
+      } else if (dragState.type === "end") {
+        const startAt = startTime;
+        const minEnd = startAt + effectiveMinClip;
+        const maxEnd = Math.min(
+          startAt + MAX_CLIP_DURATION_SEC,
+          duration
+        );
+        if (maxEnd <= minEnd) return;
+        const newEnd = Math.min(Math.max(absoluteTime, minEnd), maxEnd);
+        const newDuration = Math.min(
+          Math.max(newEnd - startAt, effectiveMinClip),
+          MAX_CLIP_DURATION_SEC,
+          Math.max(duration - startAt, effectiveMinClip)
+        );
+        setClipDuration(newDuration);
+        const previewTime = Math.min(startAt + newDuration, duration);
+        syncPreviewTo(previewTime);
+      }
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      if (event.pointerId !== dragState.pointerId) return;
+      setDragState(null);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [dragState, duration, currentEnd, startTime, effectiveMinClip, syncPreviewTo]);
+
+  const videoSourceOk = SOURCE_URL.trim().length > 0;
+
+  const canDownload =
+    videoReady &&
+    videoSourceOk &&
+    !isProcessing &&
+    clipDuration > 0 &&
+    duration !== null &&
+    startTime + clipDuration <= duration + 0.01;
+
+  const ensureFfmpegLoaded = async () => {
+    if (ffmpegReady) return;
+    if (!ffmpegLoadingPromise) {
+      ffmpegLoadingPromise = ffmpeg.load();
+    }
+    await ffmpegLoadingPromise;
+    setFfmpegReady(true);
+  };
+
+  const handleDownloadClip = async () => {
+    if (!videoSourceOk || duration === null) return;
+
+    setIsProcessing(true);
+    setErrorMessage("");
+    setProgressPercent(null);
+    setStatusMessage("Carregando motor de corte...");
+
+    try {
+      await ensureFfmpegLoaded();
+
+      setStatusMessage("Baixando video de origem...");
+      await ffmpeg.writeFile("source.mp4", await fetchFile(SOURCE_URL));
+
+      setStatusMessage("Gerando corte...");
+      const safeStart = Math.max(0, Math.min(startTime, duration));
+      const safeLength = Math.min(
+        clipDuration,
+        MAX_CLIP_DURATION_SEC,
+        duration
+      );
+
+      await ffmpeg.exec([
+        "-ss",
+        safeStart.toFixed(2),
+        "-t",
+        safeLength.toFixed(2),
+        "-i",
+        "source.mp4",
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-crf",
+        "23",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-movflags",
+        "faststart",
+        "clip.mp4"
+      ]);
+
+      const data = await ffmpeg.readFile("clip.mp4");
+      const blob = new Blob([data.buffer], { type: "video/mp4" });
+      const url = URL.createObjectURL(blob);
+
+      if (downloadUrl) {
+        URL.revokeObjectURL(downloadUrl);
+      }
+
+      setDownloadUrl(url);
+      setStatusMessage(
+        "Corte pronto! Use o botao abaixo para baixar sem marca d'agua."
+      );
+    } catch (err) {
+      console.error(err);
+      setErrorMessage(
+        "Nao foi possivel gerar o corte. Verifique a URL do video e tente novamente."
+      );
+      setStatusMessage("");
+    } finally {
+      try {
+        await ffmpeg.deleteFile("source.mp4");
+      } catch {
+        /* noop */
+      }
+      try {
+        await ffmpeg.deleteFile("clip.mp4");
+      } catch {
+        /* noop */
+      }
+      setIsProcessing(false);
+      setProgressPercent(null);
+    }
+  };
+
+  const handlePreviewClip = () => {
+    syncPreviewTo(startTime);
+    const video = videoRef.current;
+    if (!video) return;
+    void video.play();
+  };
+
+  const selectionWidthPercent =
+    duration && duration > 0
+      ? Math.max((currentEnd - startTime) / duration, 0) * 100
+      : 0;
+  const selectionLeftPercent =
+    duration && duration > 0 ? (startTime / duration) * 100 : 0;
+
+  const handleStartDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (duration === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDragState({
+      type: "start",
+      pointerId: event.pointerId,
+      startAt: startTime,
+      endAt: currentEnd,
+      initialClientX: event.clientX
+    });
+  };
+
+  const handleEndDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (duration === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDragState({
+      type: "end",
+      pointerId: event.pointerId,
+      startAt: startTime,
+      endAt: currentEnd,
+      initialClientX: event.clientX
+    });
+  };
+
+  const handleSelectionDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (duration === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDragState({
+      type: "selection",
+      pointerId: event.pointerId,
+      startAt: startTime,
+      endAt: currentEnd,
+      initialClientX: event.clientX
+    });
+  };
+
+  const handleTimelineTrackPointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>
+  ) => {
+    if (duration === null) return;
+    const target = event.target as HTMLElement;
+    if (target.dataset.role) return;
+
+    const rect = timelineRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return;
+    const ratio = (event.clientX - rect.left) / rect.width;
+    const clampedRatio = Math.min(Math.max(ratio, 0), 1);
+    const selectionLength = Math.min(
+      Math.max(clipDuration, effectiveMinClip),
+      MAX_CLIP_DURATION_SEC,
+      duration
+    );
+
+    let newStart = clampedRatio * duration - selectionLength / 2;
+    newStart = Math.min(
+      Math.max(newStart, 0),
+      Math.max(duration - selectionLength, 0)
+    );
+
+    setStartTime(newStart);
+    setClipDuration(selectionLength);
+    syncPreviewTo(newStart);
+  };
+
+  return (
+    <div className="app">
+      <h1>Editor rapido de cortes</h1>
+      <p className="subtitle">
+        Selecione o trecho desejado, visualize com marca d&apos;agua e baixe o
+        corte final limpo.
+      </p>
+
+      {!videoSourceOk ? (
+        <p className="error">
+          Defina a variavel de ambiente <code>VITE_SOURCE_VIDEO_URL</code> com a
+          URL do video para comecar.
+        </p>
+      ) : (
+        <div className="preview-wrapper">
+          <video
+            className="preview-video"
+            controls
+            preload="metadata"
+            ref={videoRef}
+            onLoadedMetadata={(event) => {
+              const media = event.currentTarget;
+              const videoDuration = Math.max(media.duration, 0);
+              setDuration(videoDuration);
+              setVideoReady(true);
+
+              const minClip = Math.min(
+                Math.min(MIN_CLIP_DURATION_SEC, MAX_CLIP_DURATION_SEC),
+                videoDuration > 0 ? videoDuration : MIN_CLIP_DURATION_SEC
+              );
+              const initialClip = Math.min(
+                MAX_CLIP_DURATION_SEC,
+                videoDuration || MIN_CLIP_DURATION_SEC
+              );
+              const safeClip = Math.max(initialClip, minClip);
+
+              setClipDuration(safeClip);
+              setStartTime(0);
+            }}
+            onError={() => {
+              setErrorMessage(
+                "Falha ao carregar o video da URL informada. Confira se o link esta ativo e permite acesso."
+              );
+            }}
+          >
+            <source src={SOURCE_URL} />
+            Seu navegador nao suporta a tag de video.
+          </video>
+          <div className="watermark">{WATERMARK_LABEL}</div>
+        </div>
+      )}
+
+      {videoReady && duration !== null && duration > 0 && (
+        <div className="timeline">
+          <div
+            className="timeline-track"
+            ref={timelineRef}
+            onPointerDown={handleTimelineTrackPointerDown}
+          >
+            <div
+              className={`timeline-selection${
+                dragState?.type === "selection" ? " dragging" : ""
+              }`}
+              style={{
+                left: `${selectionLeftPercent}%`,
+                width: `${selectionWidthPercent}%`
+              }}
+              data-role="selection"
+              onPointerDown={handleSelectionDrag}
+            />
+            <div
+              className="timeline-handle"
+              style={{ left: `${selectionLeftPercent}%` }}
+              data-role="handle-start"
+              onPointerDown={handleStartDrag}
+            />
+            <div
+              className="timeline-handle"
+              style={{
+                left: `${selectionLeftPercent + selectionWidthPercent}%`
+              }}
+              data-role="handle-end"
+              onPointerDown={handleEndDrag}
+            />
+            <div
+              className="timeline-label"
+              style={{ left: `${selectionLeftPercent}%` }}
+            >
+              {formatSeconds(startTime)}
+            </div>
+            <div
+              className="timeline-label end"
+              style={{
+                left: `${selectionLeftPercent + selectionWidthPercent}%`
+              }}
+            >
+              {formatSeconds(currentEnd)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="controls">
+        <div className="status">
+          {duration !== null
+            ? `Trecho selecionado: ${formatSeconds(startTime)} ate ${formatSeconds(
+                currentEnd
+              )} (max. ${formatSeconds(MAX_CLIP_DURATION_SEC)})`
+            : "Carregando duracao do video..."}
+        </div>
+
+        <p className="subtitle">
+          Arraste as bolinhas ou o trecho destacado na barra do video para marcar
+          o corte.
+        </p>
+
+        {errorMessage && <div className="status error">{errorMessage}</div>}
+
+        <div className="actions">
+          <button
+            className="secondary"
+            onClick={handlePreviewClip}
+            disabled={!videoReady}
+          >
+            Visualizar com marca d&apos;agua
+          </button>
+          <button
+            className="primary"
+            onClick={handleDownloadClip}
+            disabled={!canDownload}
+          >
+            {isProcessing ? "Processando..." : "Cortar e baixar"}
+          </button>
+        </div>
+
+        {isProcessing && (
+          <div className="progress">
+            <div className="progress-track">
+              <div
+                className="progress-bar"
+                style={{
+                  width: `${Math.min(Math.max(progressPercent ?? 0, 0), 100)}%`
+                }}
+              />
+            </div>
+            <span className="progress-label">
+              {progressPercent !== null
+                ? `Gerando corte: ${progressPercent}%`
+                : "Preparando corte..."}
+            </span>
+          </div>
+        )}
+
+        {statusMessage && !errorMessage && (
+          <div className="status">{statusMessage}</div>
+        )}
+
+        {downloadUrl && !isProcessing && (
+          <a
+            className="download-link"
+            href={downloadUrl}
+            download={`corte-${Math.round(startTime)}s-${Math.round(
+              clipDuration
+            )}s.mp4`}
+          >
+            Clique aqui para baixar o corte
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth="1.5"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M7.5 12l4.5 4.5m0 0L16.5 12m-4.5 4.5V3"
+              />
+            </svg>
+          </a>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default App;
