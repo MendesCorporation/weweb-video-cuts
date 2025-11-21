@@ -36,14 +36,8 @@
     <!-- Timeline Selector -->
     <div v-if="videoDuration > 0" class="timeline-container" :style="timelineContainerStyle">
       <div class="timeline-info" :style="timelineInfoStyle">
-        <span class="time-label" :style="{ color: props.content?.timeLabelColor || '#007AFF' }">
-          {{ formatTime(selectionStart) }}
-        </span>
         <span class="duration-label" :style="{ color: props.content?.durationLabelColor || '#999' }">
           {{ formatTime(selectionStart) }} - {{ formatTime(selectionEnd) }} ({{ formatTime(selectionDuration) }} / {{ formatTime(effectiveMaxDuration) }})
-        </span>
-        <span class="time-label" :style="{ color: props.content?.timeLabelColor || '#007AFF' }">
-          {{ formatTime(selectionEnd) }}
         </span>
       </div>
 
@@ -75,6 +69,35 @@
           @pointerdown.stop="handleEndDrag"
         >
           <div class="handle-grip" />
+        </div>
+      </div>
+
+      <!-- Manual Time Inputs -->
+      <div class="time-inputs">
+        <div class="time-input-group">
+          <label class="time-input-label">Início</label>
+          <input
+            type="text"
+            class="time-input"
+            :value="formatTimeInput(selectionStart)"
+            @input="handleStartInput"
+            @blur="handleStartBlur"
+            placeholder="0:00"
+            inputmode="numeric"
+          />
+        </div>
+
+        <div class="time-input-group">
+          <label class="time-input-label">Fim</label>
+          <input
+            type="text"
+            class="time-input"
+            :value="formatTimeInput(selectionEnd)"
+            @input="handleEndInput"
+            @blur="handleEndBlur"
+            placeholder="0:00"
+            inputmode="numeric"
+          />
         </div>
       </div>
     </div>
@@ -260,6 +283,30 @@ export default {
       const mins = Math.floor(seconds / 60);
       const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
       return `${mins}:${secs}`;
+    };
+
+    const formatTimeInput = (seconds) => {
+      if (!Number.isFinite(seconds)) return '0:00';
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    const parseTimeInput = (timeString) => {
+      // Remove espaços e aceita formatos: "1:30", "0:45", "15:20", etc
+      const cleaned = timeString.trim().replace(/\s+/g, '');
+      const parts = cleaned.split(':');
+
+      if (parts.length !== 2) return null;
+
+      const mins = parseInt(parts[0], 10);
+      const secs = parseInt(parts[1], 10);
+
+      if (!Number.isFinite(mins) || !Number.isFinite(secs) || mins < 0 || secs < 0 || secs >= 60) {
+        return null;
+      }
+
+      return mins * 60 + secs;
     };
 
     const getWatermarkStyle = (position) => ({
@@ -487,6 +534,146 @@ export default {
       dragState.value = null;
     };
 
+    // Manual input handlers with mask
+    const applyTimeMask = (value) => {
+      // Remove tudo exceto números
+      const numbers = value.replace(/\D/g, '');
+
+      if (numbers.length === 0) return '';
+      if (numbers.length === 1) return numbers;
+
+      // Formata como M:SS ou MM:SS
+      if (numbers.length === 2) {
+        return `${numbers[0]}:${numbers[1]}`;
+      }
+
+      if (numbers.length === 3) {
+        return `${numbers[0]}:${numbers.slice(1, 3)}`;
+      }
+
+      // Se tiver 4+ dígitos, formata como MM:SS
+      return `${numbers.slice(0, -2)}:${numbers.slice(-2)}`;
+    };
+
+    const handleStartInput = (event) => {
+      const input = event.target;
+      const cursorPosition = input.selectionStart;
+      const oldValue = input.value;
+      const newValue = event.data ? input.value : input.value;
+
+      // Aplica máscara
+      const masked = applyTimeMask(newValue);
+      input.value = masked;
+
+      // Ajusta posição do cursor
+      if (event.data && cursorPosition) {
+        const colonsBefore = (oldValue.substring(0, cursorPosition).match(/:/g) || []).length;
+        const colonsAfter = (masked.substring(0, cursorPosition).match(/:/g) || []).length;
+        const newCursorPosition = cursorPosition + (colonsAfter - colonsBefore);
+        input.setSelectionRange(newCursorPosition, newCursorPosition);
+      }
+
+      // Atualizar seleção se valor válido
+      const parsed = parseTimeInput(masked);
+      if (parsed !== null) {
+        const maxStart = Math.max(videoDuration.value - effectiveMinDuration.value, 0);
+        const clampedStart = Math.max(0, Math.min(parsed, maxStart));
+
+        let newDuration = selectionEnd.value - clampedStart;
+        if (newDuration > effectiveMaxDuration.value) {
+          newDuration = effectiveMaxDuration.value;
+        }
+
+        const maxDurationFromStart = Math.min(effectiveMaxDuration.value, videoDuration.value - clampedStart);
+        newDuration = Math.max(effectiveMinDuration.value, Math.min(newDuration, maxDurationFromStart));
+
+        updateSelection(clampedStart, newDuration, false);
+        updateVideoPreview(clampedStart);
+      }
+    };
+
+    const handleStartBlur = (event) => {
+      // Ao sair do campo, força formatação correta
+      const parsed = parseTimeInput(event.target.value);
+      if (parsed !== null) {
+        const maxStart = Math.max(videoDuration.value - effectiveMinDuration.value, 0);
+        const clampedStart = Math.max(0, Math.min(parsed, maxStart));
+
+        let newDuration = selectionEnd.value - clampedStart;
+        if (newDuration > effectiveMaxDuration.value) {
+          newDuration = effectiveMaxDuration.value;
+        }
+
+        const maxDurationFromStart = Math.min(effectiveMaxDuration.value, videoDuration.value - clampedStart);
+        newDuration = Math.max(effectiveMinDuration.value, Math.min(newDuration, maxDurationFromStart));
+
+        updateSelection(clampedStart, newDuration);
+      } else {
+        // Se inválido, restaura valor atual
+        event.target.value = formatTimeInput(selectionStart.value);
+      }
+    };
+
+    const handleEndInput = (event) => {
+      const input = event.target;
+      const cursorPosition = input.selectionStart;
+      const oldValue = input.value;
+      const newValue = event.data ? input.value : input.value;
+
+      // Aplica máscara
+      const masked = applyTimeMask(newValue);
+      input.value = masked;
+
+      // Ajusta posição do cursor
+      if (event.data && cursorPosition) {
+        const colonsBefore = (oldValue.substring(0, cursorPosition).match(/:/g) || []).length;
+        const colonsAfter = (masked.substring(0, cursorPosition).match(/:/g) || []).length;
+        const newCursorPosition = cursorPosition + (colonsAfter - colonsBefore);
+        input.setSelectionRange(newCursorPosition, newCursorPosition);
+      }
+
+      const parsed = parseTimeInput(masked);
+      if (parsed !== null) {
+        const clampedEnd = Math.max(
+          selectionStart.value + effectiveMinDuration.value,
+          Math.min(parsed, videoDuration.value)
+        );
+
+        let newDuration = clampedEnd - selectionStart.value;
+
+        if (newDuration > effectiveMaxDuration.value) {
+          newDuration = effectiveMaxDuration.value;
+        }
+
+        newDuration = Math.max(effectiveMinDuration.value, Math.min(newDuration, effectiveMaxDuration.value));
+
+        updateSelection(selectionStart.value, newDuration, false);
+        updateVideoPreview(selectionStart.value + newDuration);
+      }
+    };
+
+    const handleEndBlur = (event) => {
+      const parsed = parseTimeInput(event.target.value);
+      if (parsed !== null) {
+        const clampedEnd = Math.max(
+          selectionStart.value + effectiveMinDuration.value,
+          Math.min(parsed, videoDuration.value)
+        );
+
+        let newDuration = clampedEnd - selectionStart.value;
+
+        if (newDuration > effectiveMaxDuration.value) {
+          newDuration = effectiveMaxDuration.value;
+        }
+
+        newDuration = Math.max(effectiveMinDuration.value, Math.min(newDuration, effectiveMaxDuration.value));
+
+        updateSelection(selectionStart.value, newDuration);
+      } else {
+        event.target.value = formatTimeInput(selectionEnd.value);
+      }
+    };
+
     // Watchers
     watch(() => props.content?.videoUrl, () => {
       videoDuration.value = 0;
@@ -542,6 +729,7 @@ export default {
       startHandleStyle,
       endHandleStyle,
       formatTime,
+      formatTimeInput,
       getWatermarkStyle,
       handleVideoLoaded,
       handleVideoError,
@@ -552,6 +740,10 @@ export default {
       handleStartDrag,
       handleEndDrag,
       handleSelectionDrag,
+      handleStartInput,
+      handleStartBlur,
+      handleEndInput,
+      handleEndBlur,
       /* wwEditor:start */
       isEditing,
       /* wwEditor:end */
@@ -621,21 +813,18 @@ export default {
 
 .timeline-info {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   margin-bottom: 12px;
   padding: 8px 12px;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 13px;
   font-family: monospace;
-}
-
-.time-label {
-  font-weight: bold;
 }
 
 .duration-label {
   font-weight: 500;
+  text-align: center;
 }
 
 .timeline-track {
@@ -699,6 +888,58 @@ export default {
   border-radius: 2px;
 }
 
+.time-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  padding: 16px;
+  padding-top: 8px;
+}
+
+.time-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.time-input-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+
+.time-input {
+  width: 100%;
+  padding: 12px 16px;
+  background: #2a2a2a;
+  border: 2px solid #3a3a3a;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  font-family: monospace;
+  text-align: center;
+  transition: all 0.2s;
+
+  &::placeholder {
+    color: #555;
+  }
+
+  &:focus {
+    outline: none;
+    border-color: #007aff;
+    background: #333;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+  }
+
+  &:hover:not(:focus) {
+    border-color: #4a4a4a;
+  }
+}
+
 .message-overlay {
   position: absolute;
   top: 50%;
@@ -724,14 +965,33 @@ export default {
 
 @media (max-width: 768px) {
   .timeline-info {
-    font-size: 12px;
-    flex-wrap: wrap;
-    gap: 8px;
+    font-size: 11px;
+    padding: 6px 8px;
   }
 
   .timeline-handle {
     width: 24px;
     height: 48px;
+  }
+
+  .time-inputs {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .time-input-group {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .time-input-label {
+    min-width: 50px;
+  }
+
+  .time-input {
+    padding: 10px 12px;
+    font-size: 16px;
   }
 }
 </style>
