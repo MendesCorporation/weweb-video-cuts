@@ -11,6 +11,9 @@
         :preload="props.content?.preload || 'metadata'"
         controlslist="nodownload nofullscreen noremoteplayback"
         disablePictureInPicture
+        playsinline
+        webkit-playsinline
+        x-webkit-airplay="deny"
         @loadedmetadata="handleVideoLoaded"
         @error="handleVideoError"
         @play="handlePlay"
