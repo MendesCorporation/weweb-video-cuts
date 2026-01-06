@@ -263,15 +263,15 @@ export default {
 
     // Grid watermark text positions
     const gridWatermarkPositions = computed(() => {
-      const spacing = gridSpacing.value;
+      const spacing = Math.max(50, gridSpacing.value || 150); // Garante mínimo de 50px
       const positions = [];
 
-      // Calculate how many texts we need based on viewport
-      const cols = Math.ceil(1920 / spacing) + 2; // Extra for safety
-      const rows = Math.ceil(1080 / spacing) + 2;
+      // Limita a quantidade de posições para evitar estouro de memória
+      const maxCols = Math.min(15, Math.ceil(1920 / spacing));
+      const maxRows = Math.min(15, Math.ceil(1080 / spacing));
 
-      for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
+      for (let row = 0; row < maxRows; row++) {
+        for (let col = 0; col < maxCols; col++) {
           positions.push({
             x: col * spacing,
             y: row * spacing,
