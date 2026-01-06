@@ -59,7 +59,7 @@ export default {
       type: 'Text',
       section: 'settings',
       bindable: true,
-      defaultValue: 'FutLab',
+      defaultValue: '#ProibidoReprodução',
       /* wwEditor:start */
       bindingValidation: {
         type: 'string',
@@ -68,21 +68,55 @@ export default {
       propertyHelp: 'Text that will appear as watermarks on the video',
       /* wwEditor:end */
     },
-    watermarkCount: {
-      label: { en: 'Number of Watermarks' },
+    gridSpacing: {
+      label: { en: 'Grid Spacing' },
       type: 'Number',
       section: 'settings',
       bindable: true,
-      defaultValue: 12,
-      min: 1,
-      max: 50,
-      step: 1,
+      defaultValue: 150,
+      min: 50,
+      max: 400,
+      step: 10,
       /* wwEditor:start */
       bindingValidation: {
         type: 'number',
-        tooltip: 'Number of watermark instances to display',
+        tooltip: 'Spacing between grid lines and text (in pixels)',
       },
-      propertyHelp: 'How many watermark instances to show across the video',
+      propertyHelp: 'Distance between grid lines and watermark text (smaller = more dense)',
+      /* wwEditor:end */
+    },
+    gridLineWidth: {
+      label: { en: 'Grid Line Width' },
+      type: 'Number',
+      section: 'style',
+      bindable: true,
+      defaultValue: 1,
+      min: 0.5,
+      max: 5,
+      step: 0.5,
+      /* wwEditor:start */
+      bindingValidation: {
+        type: 'number',
+        tooltip: 'Width of grid lines in pixels',
+      },
+      propertyHelp: 'Thickness of the grid lines',
+      /* wwEditor:end */
+    },
+    gridLineOpacity: {
+      label: { en: 'Grid Line Opacity' },
+      type: 'Number',
+      section: 'style',
+      bindable: true,
+      defaultValue: 0.1,
+      min: 0,
+      max: 1,
+      step: 0.05,
+      /* wwEditor:start */
+      bindingValidation: {
+        type: 'number',
+        tooltip: 'Opacity of grid lines (0 to 1)',
+      },
+      propertyHelp: 'Transparency of the grid lines (0 = invisible, 1 = opaque)',
       /* wwEditor:end */
     },
     watermarkOpacity: {
@@ -120,7 +154,7 @@ export default {
       type: 'Length',
       section: 'style',
       bindable: true,
-      defaultValue: '24px',
+      defaultValue: '14px',
       /* wwEditor:start */
       bindingValidation: {
         type: 'string',

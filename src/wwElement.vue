@@ -23,15 +23,49 @@
         Your browser does not support the video tag.
       </video>
 
-      <!-- Multiple Watermarks Overlay -->
-      <div class="watermarks-container" :style="watermarksStyle">
+      <!-- Grid Watermark Overlay -->
+      <div class="watermark-grid" :style="watermarkGridStyle">
+        <svg class="watermark-svg" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern
+              id="grid-pattern"
+              :width="gridSpacing"
+              :height="gridSpacing"
+              patternUnits="userSpaceOnUse"
+              patternTransform="rotate(45)"
+            >
+              <!-- Diagonal lines -->
+              <line
+                x1="0"
+                y1="0"
+                :x2="gridSpacing"
+                :y2="0"
+                :stroke="props.content?.watermarkColor || '#FFFFFF'"
+                :stroke-width="gridLineWidth"
+                :opacity="gridLineOpacity"
+              />
+              <line
+                x1="0"
+                y1="0"
+                x2="0"
+                :y2="gridSpacing"
+                :stroke="props.content?.watermarkColor || '#FFFFFF'"
+                :stroke-width="gridLineWidth"
+                :opacity="gridLineOpacity"
+              />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid-pattern)" />
+        </svg>
+
+        <!-- Text watermarks in grid pattern -->
         <div
-          v-for="(watermark, index) in watermarkPositions"
+          v-for="(position, index) in gridWatermarkPositions"
           :key="index"
-          class="watermark"
-          :style="getWatermarkStyle(watermark)"
+          class="grid-watermark-text"
+          :style="getGridWatermarkStyle(position)"
         >
-          {{ props.content?.watermarkText || 'FutLab' }}
+          {{ props.content?.watermarkText || '#ProibidoReprodução' }}
         </div>
       </div>
     </div>
@@ -222,17 +256,29 @@ export default {
       return { width: '20px', height: '40px' };
     });
 
-    // Watermark positions (randomly distributed)
-    const watermarkPositions = computed(() => {
-      const count = props.content?.watermarkCount ?? 12;
+    // Grid watermark configuration
+    const gridSpacing = computed(() => props.content?.gridSpacing ?? 150);
+    const gridLineWidth = computed(() => props.content?.gridLineWidth ?? 1);
+    const gridLineOpacity = computed(() => props.content?.gridLineOpacity ?? 0.1);
+
+    // Grid watermark text positions
+    const gridWatermarkPositions = computed(() => {
+      const spacing = gridSpacing.value;
       const positions = [];
-      for (let i = 0; i < count; i++) {
-        positions.push({
-          top: `${(i * 37 + 10) % 90}%`,
-          left: `${(i * 43 + 5) % 90}%`,
-          rotation: (i * 23) % 360,
-        });
+
+      // Calculate how many texts we need based on viewport
+      const cols = Math.ceil(1920 / spacing) + 2; // Extra for safety
+      const rows = Math.ceil(1080 / spacing) + 2;
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          positions.push({
+            x: col * spacing,
+            y: row * spacing,
+          });
+        }
       }
+
       return positions;
     });
 
@@ -242,10 +288,10 @@ export default {
       height: '100%',
     }));
 
-    const watermarksStyle = computed(() => ({
+    const watermarkGridStyle = computed(() => ({
       '--watermark-opacity': props.content?.watermarkOpacity ?? 0.15,
       '--watermark-color': props.content?.watermarkColor || '#FFFFFF',
-      '--watermark-font-size': props.content?.watermarkFontSize || '24px',
+      '--watermark-font-size': props.content?.watermarkFontSize || '14px',
     }));
 
     const timelineContainerStyle = computed(() => ({
@@ -312,10 +358,9 @@ export default {
       return mins * 60 + secs;
     };
 
-    const getWatermarkStyle = (position) => ({
-      top: position.top,
-      left: position.left,
-      transform: `rotate(${position.rotation}deg)`,
+    const getGridWatermarkStyle = (position) => ({
+      left: `${position.x}px`,
+      top: `${position.y}px`,
     });
 
     const clampSelection = (start, duration) => {
@@ -722,10 +767,13 @@ export default {
       selectionDuration,
       selectionEnd,
       errorMessage,
-      watermarkPositions,
+      gridWatermarkPositions,
+      gridSpacing,
+      gridLineWidth,
+      gridLineOpacity,
       effectiveMaxDuration,
       containerStyle,
-      watermarksStyle,
+      watermarkGridStyle,
       timelineContainerStyle,
       timelineInfoStyle,
       selectionStyle,
@@ -733,7 +781,7 @@ export default {
       endHandleStyle,
       formatTime,
       formatTimeInput,
-      getWatermarkStyle,
+      getGridWatermarkStyle,
       handleVideoLoaded,
       handleVideoError,
       handlePlay,
@@ -788,7 +836,7 @@ export default {
   }
 }
 
-.watermarks-container {
+.watermark-grid {
   position: absolute;
   top: 0;
   left: 0;
@@ -798,15 +846,27 @@ export default {
   overflow: hidden;
 }
 
-.watermark {
+.watermark-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.grid-watermark-text {
   position: absolute;
   color: var(--watermark-color, #fff);
   opacity: var(--watermark-opacity, 0.15);
-  font-size: var(--watermark-font-size, 24px);
-  font-weight: bold;
+  font-size: var(--watermark-font-size, 14px);
+  font-weight: 600;
   white-space: nowrap;
   user-select: none;
-  text-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+  transform: rotate(-45deg);
+  transform-origin: center;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
+  letter-spacing: 0.5px;
 }
 
 .timeline-container {
