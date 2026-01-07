@@ -213,6 +213,7 @@ export default {
     const currentTime = ref(0);
     const isPlaying = ref(false);
     const isMuted = ref(false);
+   
 
     // Computed progress
     const progressPercent = computed(() => {
@@ -910,6 +911,8 @@ export default {
   display: block;
   max-height: 70vh;
   object-fit: contain;
+  position: relative;
+  z-index: 1;
 
   // Esconder botões de fullscreen e PiP
   &::-webkit-media-controls-fullscreen-button {
@@ -1057,6 +1060,10 @@ export default {
   height: 100%;
   pointer-events: none;
   overflow: hidden;
+  z-index: 999999;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .watermark-svg {
