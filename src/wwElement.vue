@@ -215,10 +215,17 @@ export default {
     const isMuted = ref(false);
 
     const detectIos = () => {
-      if (typeof navigator === 'undefined') return false;
-      const ua = navigator.userAgent || '';
-      const platform = navigator.platform || '';
-      return /iPad|iPhone|iPod/.test(ua) || (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const frontWindow = typeof wwLib !== 'undefined' && wwLib.getFrontWindow ? wwLib.getFrontWindow() : null;
+      const nav = frontWindow?.navigator || (typeof navigator !== 'undefined' ? navigator : null);
+      if (!nav) return false;
+      const ua = nav.userAgent || '';
+      const platform = nav.platform || '';
+      const vendor = nav.vendor || '';
+      const maxTouchPoints = nav.maxTouchPoints || 0;
+      const isAppleMobile = /iPad|iPhone|iPod/.test(ua);
+      const isIpadOs = platform === 'MacIntel' && maxTouchPoints > 1;
+      const isAppleTouch = /Apple/.test(vendor) && maxTouchPoints > 1;
+      return isAppleMobile || isIpadOs || isAppleTouch;
     };
 
     const isIos = ref(detectIos());
@@ -848,6 +855,10 @@ export default {
 
     // Lifecycle
     onMounted(() => {
+      const nextIsIos = detectIos();
+      if (nextIsIos !== isIos.value) {
+        isIos.value = nextIsIos;
+      }
       wwLib.getFrontWindow().addEventListener('pointermove', handlePointerMove);
       wwLib.getFrontWindow().addEventListener('pointerup', handlePointerUp);
       wwLib.getFrontWindow().addEventListener('pointercancel', handlePointerUp);
