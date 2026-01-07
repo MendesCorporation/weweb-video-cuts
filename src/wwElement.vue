@@ -1,7 +1,7 @@
 <template>
-  <div class="video-cut-player" :style="containerStyle">
+  <div class="video-cut-player" :style="containerStyle" :class="{ 'has-custom-controls': showCustomControls }">
     <!-- Video Container with Watermarks -->
-    <div class="video-wrapper" @click="togglePlayPause">
+    <div class="video-wrapper" @click="handleWrapperClick">
       <video
         ref="videoRef"
         class="video-element"
@@ -554,6 +554,11 @@ export default {
       }
     };
 
+    const handleWrapperClick = () => {
+      if (showNativeControls.value) return;
+      togglePlayPause();
+    };
+
     const toggleMute = () => {
       const video = videoRef.value;
       if (!video) return;
@@ -890,6 +895,7 @@ export default {
       handlePause,
       handleTimeUpdate,
       togglePlayPause,
+      handleWrapperClick,
       toggleMute,
       seekVideo,
       handleTimelineClick,
@@ -975,7 +981,12 @@ export default {
   padding: 20px 16px 12px;
   opacity: 0;
   transition: opacity 0.3s;
-  z-index: 10;
+  z-index: 1000000;
+  pointer-events: auto;
+}
+
+.video-cut-player.has-custom-controls .custom-controls {
+  opacity: 1;
 }
 
 .controls-row {
@@ -1077,6 +1088,10 @@ export default {
   -webkit-transform: translateZ(0);
   transform: translateZ(0);
   will-change: transform;
+}
+
+.watermark-grid * {
+  pointer-events: none;
 }
 
 .watermark-svg {
