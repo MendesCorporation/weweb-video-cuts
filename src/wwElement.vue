@@ -19,9 +19,14 @@
         @play="handlePlay"
         @pause="handlePause"
         @timeupdate="handleTimeUpdate"
+        @webkitbeginfullscreen="handleFullscreenEnter"
+        @webkitendfullscreen="handleFullscreenExit"
       >
         Your browser does not support the video tag.
       </video>
+
+      <!-- Watermark for iOS Fullscreen (using ::cue track) -->
+      <track kind="metadata" ref="watermarkTrackRef" />
 
       <!-- Grid Watermark Overlay -->
       <div class="watermark-grid" :style="watermarkGridStyle">
@@ -477,6 +482,35 @@ export default {
       }
     };
 
+    const handleFullscreenEnter = () => {
+      // Prevenir fullscreen no iOS
+      const video = videoRef.value;
+      if (video) {
+        try {
+          video.webkitExitFullscreen();
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+
+      emit('trigger-event', {
+        name: 'fullscreen-blocked',
+        event: {
+          message: 'Fullscreen is disabled for content protection',
+        },
+      });
+    };
+
+    const handleFullscreenExit = () => {
+      // Handler quando sai do fullscreen
+      emit('trigger-event', {
+        name: 'fullscreen-exit',
+        event: {
+          currentTime: videoRef.value?.currentTime || 0,
+        },
+      });
+    };
+
     const handleTimelineClick = (event) => {
       if (dragState.value || videoDuration.value === 0) return;
       const target = event.target;
@@ -750,6 +784,33 @@ export default {
       wwLib.getFrontWindow().addEventListener('pointermove', handlePointerMove);
       wwLib.getFrontWindow().addEventListener('pointerup', handlePointerUp);
       wwLib.getFrontWindow().addEventListener('pointercancel', handlePointerUp);
+
+      // Bloquear fullscreen no iOS
+      const video = videoRef.value;
+      if (video) {
+        // Interceptar tentativas de fullscreen
+        video.addEventListener('webkitbeginfullscreen', handleFullscreenEnter);
+        video.addEventListener('webkitendfullscreen', handleFullscreenExit);
+
+        // Remover atributo que permite fullscreen
+        video.removeAttribute('allowfullscreen');
+        video.removeAttribute('webkitallowfullscreen');
+
+        // Observar mudanças nos atributos
+        const observer = new MutationObserver(() => {
+          if (video.hasAttribute('allowfullscreen')) {
+            video.removeAttribute('allowfullscreen');
+          }
+          if (video.hasAttribute('webkitallowfullscreen')) {
+            video.removeAttribute('webkitallowfullscreen');
+          }
+        });
+
+        observer.observe(video, {
+          attributes: true,
+          attributeFilter: ['allowfullscreen', 'webkitallowfullscreen'],
+        });
+      }
     });
 
     onBeforeUnmount(() => {
@@ -787,6 +848,8 @@ export default {
       handlePlay,
       handlePause,
       handleTimeUpdate,
+      handleFullscreenEnter,
+      handleFullscreenExit,
       handleTimelineClick,
       handleStartDrag,
       handleEndDrag,
@@ -827,12 +890,33 @@ export default {
   max-height: 70vh;
   object-fit: contain;
 
+  // Esconder botões de fullscreen e PiP
   &::-webkit-media-controls-fullscreen-button {
-    display: none;
+    display: none !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
   }
 
   &::-webkit-media-controls-picture-in-picture-button {
-    display: none;
+    display: none !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
+
+  // iOS Safari - esconder botão de expansão
+  &::-webkit-media-controls-start-playback-button {
+    display: none !important;
+  }
+
+  // Tentar bloquear fullscreen via CSS
+  &:-webkit-full-screen {
+    display: none !important;
+  }
+
+  &:fullscreen {
+    display: none !important;
   }
 }
 
