@@ -1,12 +1,12 @@
 <template>
   <div class="video-cut-player" :style="containerStyle">
     <!-- Video Container with Watermarks -->
-    <div class="video-wrapper">
+    <div class="video-wrapper" @click="togglePlayPause">
       <video
         ref="videoRef"
         class="video-element"
         :src="props.content?.videoUrl"
-        :controls="props.content?.showControls ?? true"
+        :controls="false"
         :autoplay="props.content?.autoPlay ?? false"
         :preload="props.content?.preload || 'metadata'"
         controlslist="nodownload nofullscreen noremoteplayback"
@@ -19,14 +19,47 @@
         @play="handlePlay"
         @pause="handlePause"
         @timeupdate="handleTimeUpdate"
-        @webkitbeginfullscreen="handleFullscreenEnter"
-        @webkitendfullscreen="handleFullscreenExit"
       >
         Your browser does not support the video tag.
       </video>
 
-      <!-- Watermark for iOS Fullscreen (using ::cue track) -->
-      <track kind="metadata" ref="watermarkTrackRef" />
+      <!-- Custom Video Controls -->
+      <div v-if="props.content?.showControls ?? true" class="custom-controls" @click.stop>
+        <div class="controls-row">
+          <!-- Play/Pause Button -->
+          <button class="control-btn" @click="togglePlayPause">
+            <svg v-if="!isPlaying" width="24" height="24" viewBox="0 0 24 24" fill="white">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+            <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="white">
+              <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+            </svg>
+          </button>
+
+          <!-- Current Time -->
+          <span class="time-display">{{ formatTime(currentTime) }}</span>
+
+          <!-- Progress Bar -->
+          <div class="progress-bar-container" @click="seekVideo">
+            <div class="progress-bar">
+              <div class="progress-filled" :style="{ width: progressPercent + '%' }"></div>
+            </div>
+          </div>
+
+          <!-- Duration -->
+          <span class="time-display">{{ formatTime(videoDuration) }}</span>
+
+          <!-- Volume/Mute Button -->
+          <button class="control-btn" @click="toggleMute">
+            <svg v-if="!isMuted" width="24" height="24" viewBox="0 0 24 24" fill="white">
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+            </svg>
+            <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="white">
+              <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
 
       <!-- Grid Watermark Overlay -->
       <div class="watermark-grid" :style="watermarkGridStyle">
@@ -179,6 +212,13 @@ export default {
     const dragState = ref(null);
     const currentTime = ref(0);
     const isPlaying = ref(false);
+    const isMuted = ref(false);
+
+    // Computed progress
+    const progressPercent = computed(() => {
+      if (videoDuration.value === 0) return 0;
+      return (currentTime.value / videoDuration.value) * 100;
+    });
 
     /* wwEditor:start */
     const isEditing = computed(() => props.wwEditorState?.isEditing ?? false);
@@ -482,33 +522,35 @@ export default {
       }
     };
 
-    const handleFullscreenEnter = () => {
-      // Prevenir fullscreen no iOS
+    // Custom Controls Functions
+    const togglePlayPause = () => {
       const video = videoRef.value;
-      if (video) {
-        try {
-          video.webkitExitFullscreen();
-        } catch (e) {
-          // Ignore errors
-        }
-      }
+      if (!video) return;
 
-      emit('trigger-event', {
-        name: 'fullscreen-blocked',
-        event: {
-          message: 'Fullscreen is disabled for content protection',
-        },
-      });
+      if (video.paused) {
+        video.play();
+      } else {
+        video.pause();
+      }
     };
 
-    const handleFullscreenExit = () => {
-      // Handler quando sai do fullscreen
-      emit('trigger-event', {
-        name: 'fullscreen-exit',
-        event: {
-          currentTime: videoRef.value?.currentTime || 0,
-        },
-      });
+    const toggleMute = () => {
+      const video = videoRef.value;
+      if (!video) return;
+
+      video.muted = !video.muted;
+      isMuted.value = video.muted;
+    };
+
+    const seekVideo = (event) => {
+      const video = videoRef.value;
+      if (!video || videoDuration.value === 0) return;
+
+      const rect = event.currentTarget.getBoundingClientRect();
+      const percent = (event.clientX - rect.left) / rect.width;
+      const newTime = percent * videoDuration.value;
+
+      video.currentTime = Math.max(0, Math.min(newTime, videoDuration.value));
     };
 
     const handleTimelineClick = (event) => {
@@ -784,33 +826,6 @@ export default {
       wwLib.getFrontWindow().addEventListener('pointermove', handlePointerMove);
       wwLib.getFrontWindow().addEventListener('pointerup', handlePointerUp);
       wwLib.getFrontWindow().addEventListener('pointercancel', handlePointerUp);
-
-      // Bloquear fullscreen no iOS
-      const video = videoRef.value;
-      if (video) {
-        // Interceptar tentativas de fullscreen
-        video.addEventListener('webkitbeginfullscreen', handleFullscreenEnter);
-        video.addEventListener('webkitendfullscreen', handleFullscreenExit);
-
-        // Remover atributo que permite fullscreen
-        video.removeAttribute('allowfullscreen');
-        video.removeAttribute('webkitallowfullscreen');
-
-        // Observar mudanças nos atributos
-        const observer = new MutationObserver(() => {
-          if (video.hasAttribute('allowfullscreen')) {
-            video.removeAttribute('allowfullscreen');
-          }
-          if (video.hasAttribute('webkitallowfullscreen')) {
-            video.removeAttribute('webkitallowfullscreen');
-          }
-        });
-
-        observer.observe(video, {
-          attributes: true,
-          attributeFilter: ['allowfullscreen', 'webkitallowfullscreen'],
-        });
-      }
     });
 
     onBeforeUnmount(() => {
@@ -828,6 +843,10 @@ export default {
       selectionDuration,
       selectionEnd,
       errorMessage,
+      currentTime,
+      isPlaying,
+      isMuted,
+      progressPercent,
       gridWatermarkPositions,
       gridSpacing,
       gridLineWidth,
@@ -848,8 +867,9 @@ export default {
       handlePlay,
       handlePause,
       handleTimeUpdate,
-      handleFullscreenEnter,
-      handleFullscreenExit,
+      togglePlayPause,
+      toggleMute,
+      seekVideo,
       handleTimelineClick,
       handleStartDrag,
       handleEndDrag,
@@ -881,6 +901,7 @@ export default {
   position: relative;
   width: 100%;
   background: #000;
+  cursor: pointer;
 }
 
 .video-element {
@@ -917,6 +938,114 @@ export default {
 
   &:fullscreen {
     display: none !important;
+  }
+}
+
+// Custom Video Controls
+.custom-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
+  padding: 20px 16px 12px;
+  opacity: 1;
+  transition: opacity 0.3s;
+  z-index: 10;
+
+  .video-wrapper:not(:hover) & {
+    opacity: 0;
+  }
+
+  .video-wrapper:hover & {
+    opacity: 1;
+  }
+}
+
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.control-btn {
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, opacity 0.2s;
+  opacity: 0.9;
+
+  &:hover {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+
+  svg {
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+  }
+}
+
+.time-display {
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: monospace;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  min-width: 45px;
+  text-align: center;
+}
+
+.progress-bar-container {
+  flex: 1;
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.progress-bar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+  transition: height 0.2s;
+
+  .progress-bar-container:hover & {
+    height: 6px;
+  }
+}
+
+.progress-filled {
+  height: 100%;
+  background: #007AFF;
+  border-radius: 2px;
+  transition: width 0.1s linear;
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 12px;
+    height: 12px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .progress-bar-container:hover &::after {
+    opacity: 1;
   }
 }
 
@@ -1111,6 +1240,39 @@ export default {
 }
 
 @media (max-width: 768px) {
+  .custom-controls {
+    padding: 16px 12px 10px;
+
+    // Always show on mobile
+    opacity: 1 !important;
+  }
+
+  .controls-row {
+    gap: 8px;
+  }
+
+  .control-btn {
+    padding: 6px;
+
+    svg {
+      width: 20px;
+      height: 20px;
+    }
+  }
+
+  .time-display {
+    font-size: 11px;
+    min-width: 38px;
+  }
+
+  .progress-bar-container {
+    padding: 10px 0;
+  }
+
+  .progress-bar {
+    height: 5px;
+  }
+
   .timeline-info {
     font-size: 11px;
     padding: 6px 8px;

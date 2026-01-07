@@ -355,19 +355,5 @@ export default {
         currentTime: 0,
       },
     },
-    {
-      name: 'fullscreen-blocked',
-      label: { en: 'On Fullscreen Blocked' },
-      event: {
-        message: '',
-      },
-    },
-    {
-      name: 'fullscreen-exit',
-      label: { en: 'On Fullscreen Exit' },
-      event: {
-        currentTime: 0,
-      },
-    },
   ],
 };
