@@ -6,7 +6,7 @@
         ref="videoRef"
         class="video-element"
         :src="props.content?.videoUrl"
-        :controls="false"
+        :controls="showNativeControls"
         :autoplay="props.content?.autoPlay ?? false"
         :preload="props.content?.preload || 'metadata'"
         controlslist="nodownload nofullscreen noremoteplayback"
@@ -24,7 +24,7 @@
       </video>
 
       <!-- Custom Video Controls -->
-      <div v-if="props.content?.showControls ?? true" class="custom-controls" @click.stop>
+      <div v-if="showCustomControls" class="custom-controls" @click.stop>
         <div class="controls-row">
           <!-- Play/Pause Button -->
           <button class="control-btn" @click="togglePlayPause">
@@ -213,12 +213,31 @@ export default {
     const currentTime = ref(0);
     const isPlaying = ref(false);
     const isMuted = ref(false);
+
+    const detectIos = () => {
+      if (typeof navigator === 'undefined') return false;
+      const ua = navigator.userAgent || '';
+      const platform = navigator.platform || '';
+      return /iPad|iPhone|iPod/.test(ua) || (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    };
+
+    const isIos = ref(detectIos());
    
 
     // Computed progress
     const progressPercent = computed(() => {
       if (videoDuration.value === 0) return 0;
       return (currentTime.value / videoDuration.value) * 100;
+    });
+
+    const showNativeControls = computed(() => {
+      const wantsControls = props.content?.showControls ?? true;
+      return wantsControls && !isIos.value;
+    });
+
+    const showCustomControls = computed(() => {
+      const wantsControls = props.content?.showControls ?? true;
+      return wantsControls && isIos.value;
     });
 
     /* wwEditor:start */
@@ -847,6 +866,8 @@ export default {
       currentTime,
       isPlaying,
       isMuted,
+      showNativeControls,
+      showCustomControls,
       progressPercent,
       gridWatermarkPositions,
       gridSpacing,
@@ -952,17 +973,9 @@ export default {
   right: 0;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
   padding: 20px 16px 12px;
-  opacity: 1;
+  opacity: 0;
   transition: opacity 0.3s;
   z-index: 10;
-
-  .video-wrapper:not(:hover) & {
-    opacity: 0;
-  }
-
-  .video-wrapper:hover & {
-    opacity: 1;
-  }
 }
 
 .controls-row {
@@ -1249,9 +1262,6 @@ export default {
 @media (max-width: 768px) {
   .custom-controls {
     padding: 16px 12px 10px;
-
-    // Always show on mobile
-    opacity: 1 !important;
   }
 
   .controls-row {
@@ -1308,6 +1318,18 @@ export default {
   .time-input {
     padding: 10px 12px;
     font-size: 16px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .video-wrapper:hover .custom-controls {
+    opacity: 1;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .custom-controls {
+    opacity: 1;
   }
 }
 </style>
