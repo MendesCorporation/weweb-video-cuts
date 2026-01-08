@@ -1,5 +1,9 @@
 <template>
-  <div class="video-cut-player" :style="containerStyle" :class="{ 'has-custom-controls': showCustomControls }">
+  <div
+    class="video-cut-player"
+    :style="containerStyle"
+    :class="{ 'controls-enabled': controlsEnabled, 'use-custom-controls': isIos }"
+  >
     <!-- Video Container with Watermarks -->
     <div class="video-wrapper" @click="handleWrapperClick">
       <video
@@ -24,7 +28,7 @@
       </video>
 
       <!-- Custom Video Controls -->
-      <div v-if="showCustomControls" class="custom-controls" @click.stop>
+      <div v-if="controlsEnabled" class="custom-controls" @click.stop>
         <div class="controls-row">
           <!-- Play/Pause Button -->
           <button class="control-btn" @click="togglePlayPause">
@@ -237,14 +241,10 @@ export default {
       return (currentTime.value / videoDuration.value) * 100;
     });
 
-    const showNativeControls = computed(() => {
-      const wantsControls = props.content?.showControls ?? true;
-      return wantsControls && !isIos.value;
-    });
+    const controlsEnabled = computed(() => props.content?.showControls ?? true);
 
-    const showCustomControls = computed(() => {
-      const wantsControls = props.content?.showControls ?? true;
-      return wantsControls && isIos.value;
+    const showNativeControls = computed(() => {
+      return controlsEnabled.value && !isIos.value;
     });
 
     /* wwEditor:start */
@@ -882,8 +882,9 @@ export default {
       currentTime,
       isPlaying,
       isMuted,
+      isIos,
+      controlsEnabled,
       showNativeControls,
-      showCustomControls,
       progressPercent,
       gridWatermarkPositions,
       gridSpacing,
@@ -984,20 +985,26 @@ export default {
 
 // Custom Video Controls
 .custom-controls {
+  display: none;
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
   padding: 20px 16px 12px;
-  opacity: 0;
-  transition: opacity 0.3s;
+  opacity: 1;
   z-index: 1000000;
   pointer-events: auto;
 }
 
-.video-cut-player.has-custom-controls .custom-controls {
-  opacity: 1;
+.video-cut-player.use-custom-controls .custom-controls {
+  display: block;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .video-cut-player.controls-enabled .custom-controls {
+    display: block;
+  }
 }
 
 .controls-row {
@@ -1347,15 +1354,4 @@ export default {
   }
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .video-wrapper:hover .custom-controls {
-    opacity: 1;
-  }
-}
-
-@media (hover: none), (pointer: coarse) {
-  .custom-controls {
-    opacity: 1;
-  }
-}
 </style>
