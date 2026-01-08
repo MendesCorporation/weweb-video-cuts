@@ -140,6 +140,7 @@
             type="text"
             class="time-input"
             :value="formatTimeInput(selectionStart)"
+            @focus="handleStartFocus"
             @input="handleStartInput"
             @blur="handleStartBlur"
             placeholder="0:00"
@@ -153,6 +154,7 @@
             type="text"
             class="time-input"
             :value="formatTimeInput(selectionEnd)"
+            @focus="handleEndFocus"
             @input="handleEndInput"
             @blur="handleEndBlur"
             placeholder="0:00"
@@ -195,6 +197,9 @@ export default {
     const currentTime = ref(0);
     const isPlaying = ref(false);
     const isMuted = ref(false);
+    const isEditingStartTime = ref(false);
+    const isEditingEndTime = ref(false);
+    const inputValidationTimer = ref(null);
 
     const detectIos = () => {
       const frontWindow = typeof wwLib !== 'undefined' && wwLib.getFrontWindow ? wwLib.getFrontWindow() : null;
@@ -604,28 +609,51 @@ export default {
       return `${numbers.slice(0, -2)}:${numbers.slice(-2)}`;
     };
 
+    const handleStartFocus = (event) => {
+      isEditingStartTime.value = true;
+      event.target.select(); // Seleciona todo o texto para facilitar substituição
+    };
+
     const handleStartInput = (event) => {
       const input = event.target;
+
+      // Limpa o timer anterior
+      if (inputValidationTimer.value) {
+        clearTimeout(inputValidationTimer.value);
+      }
+
+      // Aplica máscara básica apenas
       const masked = applyTimeMask(input.value);
       input.value = masked;
 
-      const parsed = parseTimeInput(masked);
-      if (parsed !== null) {
-        const maxStart = Math.max(videoDuration.value - effectiveMinDuration.value, 0);
-        const clampedStart = Math.max(0, Math.min(parsed, maxStart));
+      // Aguarda 800ms antes de validar e atualizar o vídeo
+      inputValidationTimer.value = setTimeout(() => {
+        const parsed = parseTimeInput(masked);
+        if (parsed !== null) {
+          const maxStart = Math.max(videoDuration.value - effectiveMinDuration.value, 0);
+          const clampedStart = Math.max(0, Math.min(parsed, maxStart));
 
-        let newDuration = selectionEnd.value - clampedStart;
-        if (newDuration > effectiveMaxDuration.value) newDuration = effectiveMaxDuration.value;
+          let newDuration = selectionEnd.value - clampedStart;
+          if (newDuration > effectiveMaxDuration.value) newDuration = effectiveMaxDuration.value;
 
-        const maxDurationFromStart = Math.min(effectiveMaxDuration.value, videoDuration.value - clampedStart);
-        newDuration = Math.max(effectiveMinDuration.value, Math.min(newDuration, maxDurationFromStart));
+          const maxDurationFromStart = Math.min(effectiveMaxDuration.value, videoDuration.value - clampedStart);
+          newDuration = Math.max(effectiveMinDuration.value, Math.min(newDuration, maxDurationFromStart));
 
-        updateSelection(clampedStart, newDuration, false);
-        updateVideoPreview(clampedStart);
-      }
+          updateSelection(clampedStart, newDuration, false);
+          updateVideoPreview(clampedStart);
+        }
+      }, 800);
     };
 
     const handleStartBlur = (event) => {
+      isEditingStartTime.value = false;
+
+      // Limpa o timer se existir
+      if (inputValidationTimer.value) {
+        clearTimeout(inputValidationTimer.value);
+        inputValidationTimer.value = null;
+      }
+
       const parsed = parseTimeInput(event.target.value);
       if (parsed !== null) {
         const maxStart = Math.max(videoDuration.value - effectiveMinDuration.value, 0);
@@ -643,28 +671,51 @@ export default {
       }
     };
 
+    const handleEndFocus = (event) => {
+      isEditingEndTime.value = true;
+      event.target.select(); // Seleciona todo o texto para facilitar substituição
+    };
+
     const handleEndInput = (event) => {
       const input = event.target;
+
+      // Limpa o timer anterior
+      if (inputValidationTimer.value) {
+        clearTimeout(inputValidationTimer.value);
+      }
+
+      // Aplica máscara básica apenas
       const masked = applyTimeMask(input.value);
       input.value = masked;
 
-      const parsed = parseTimeInput(masked);
-      if (parsed !== null) {
-        const clampedEnd = Math.max(
-          selectionStart.value + effectiveMinDuration.value,
-          Math.min(parsed, videoDuration.value)
-        );
+      // Aguarda 800ms antes de validar e atualizar o vídeo
+      inputValidationTimer.value = setTimeout(() => {
+        const parsed = parseTimeInput(masked);
+        if (parsed !== null) {
+          const clampedEnd = Math.max(
+            selectionStart.value + effectiveMinDuration.value,
+            Math.min(parsed, videoDuration.value)
+          );
 
-        let newDuration = clampedEnd - selectionStart.value;
-        if (newDuration > effectiveMaxDuration.value) newDuration = effectiveMaxDuration.value;
-        newDuration = Math.max(effectiveMinDuration.value, Math.min(newDuration, effectiveMaxDuration.value));
+          let newDuration = clampedEnd - selectionStart.value;
+          if (newDuration > effectiveMaxDuration.value) newDuration = effectiveMaxDuration.value;
+          newDuration = Math.max(effectiveMinDuration.value, Math.min(newDuration, effectiveMaxDuration.value));
 
-        updateSelection(selectionStart.value, newDuration, false);
-        updateVideoPreview(selectionStart.value + newDuration);
-      }
+          updateSelection(selectionStart.value, newDuration, false);
+          updateVideoPreview(selectionStart.value + newDuration);
+        }
+      }, 800);
     };
 
     const handleEndBlur = (event) => {
+      isEditingEndTime.value = false;
+
+      // Limpa o timer se existir
+      if (inputValidationTimer.value) {
+        clearTimeout(inputValidationTimer.value);
+        inputValidationTimer.value = null;
+      }
+
       const parsed = parseTimeInput(event.target.value);
       if (parsed !== null) {
         const clampedEnd = Math.max(
@@ -715,6 +766,11 @@ export default {
     });
 
     onBeforeUnmount(() => {
+      // Limpa o timer de validação
+      if (inputValidationTimer.value) {
+        clearTimeout(inputValidationTimer.value);
+      }
+
       const fw = wwLib.getFrontWindow();
       fw.removeEventListener('pointermove', handlePointerMove);
       fw.removeEventListener('pointerup', handlePointerUp);
@@ -766,8 +822,10 @@ export default {
       handleStartDrag,
       handleEndDrag,
       handleSelectionDrag,
+      handleStartFocus,
       handleStartInput,
       handleStartBlur,
+      handleEndFocus,
       handleEndInput,
       handleEndBlur,
       /* wwEditor:start */
