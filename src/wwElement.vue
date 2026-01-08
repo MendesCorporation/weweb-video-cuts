@@ -2,10 +2,7 @@
   <div
     class="video-cut-player"
     :style="containerStyle"
-    :class="{
-      'use-custom-controls': showCustomControls,
-      'use-native-controls': showNativeControls,
-    }"
+    :class="{ 'controls-enabled': controlsEnabled, 'use-custom-controls': isIos }"
   >
     <div class="video-wrapper" @click="handleWrapperClick">
       <video
@@ -15,11 +12,10 @@
         :controls="showNativeControls"
         :autoplay="props.content?.autoPlay ?? false"
         :preload="props.content?.preload || 'metadata'"
-        :muted="props.content?.muted ?? false"
+        controlslist="nodownload nofullscreen noremoteplayback"
+        disablePictureInPicture
         playsinline
         webkit-playsinline
-        disablePictureInPicture
-        controlslist="nodownload nofullscreen noremoteplayback"
         x-webkit-airplay="deny"
         @loadedmetadata="handleVideoLoaded"
         @error="handleVideoError"
@@ -30,40 +26,50 @@
         Your browser does not support the video tag.
       </video>
 
-      <!-- Custom Controls (iOS) -->
-      <div v-if="showCustomControls" class="custom-controls" @click.stop>
+      <div v-if="controlsEnabled" class="custom-controls" @click.stop>
         <div class="controls-row">
-          <button class="control-btn" @click="togglePlayPause" type="button">
+          <button class="control-btn" @click="togglePlayPause">
             <svg v-if="!isPlaying" width="24" height="24" viewBox="0 0 24 24" fill="white">
-              <path d="M8 5v14l11-7z"/>
+              <path d="M8 5v14l11-7z" />
             </svg>
             <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="white">
-              <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+              <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
             </svg>
           </button>
 
           <span class="time-display">{{ formatTime(currentTime) }}</span>
 
-          <div class="progress-bar-container" @click="seekVideo">
+          <div
+            ref="progressRef"
+            class="progress-bar-container"
+            @pointerdown.prevent="onProgressPointerDown"
+            @pointermove.prevent="onProgressPointerMove"
+            @pointerup.prevent="onProgressPointerUp"
+            @pointercancel.prevent="onProgressPointerUp"
+          >
             <div class="progress-bar">
               <div class="progress-filled" :style="{ width: progressPercent + '%' }"></div>
+              <div class="progress-thumb" :style="{ left: progressPercent + '%' }"></div>
             </div>
           </div>
 
           <span class="time-display">{{ formatTime(videoDuration) }}</span>
 
-          <button class="control-btn" @click="toggleMute" type="button">
+          <button class="control-btn" @click="toggleMute">
             <svg v-if="!isMuted" width="24" height="24" viewBox="0 0 24 24" fill="white">
-              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+              <path
+                d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"
+              />
             </svg>
             <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="white">
-              <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+              <path
+                d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"
+              />
             </svg>
           </button>
         </div>
       </div>
 
-      <!-- Watermark -->
       <div class="watermark-grid" :style="watermarkGridStyle">
         <svg class="watermark-svg" xmlns="http://www.w3.org/2000/svg">
           <defs>
@@ -108,12 +114,11 @@
       </div>
     </div>
 
-    <!-- Timeline -->
     <div v-if="videoDuration > 0" class="timeline-container" :style="timelineContainerStyle">
       <div class="timeline-info" :style="timelineInfoStyle">
         <span class="duration-label" :style="{ color: props.content?.durationLabelColor || '#999' }">
-          {{ formatTime(selectionStart) }} - {{ formatTime(selectionEnd) }}
-          ({{ formatTime(selectionDuration) }} / {{ formatTime(effectiveMaxDuration) }})
+          {{ formatTime(selectionStart) }} - {{ formatTime(selectionEnd) }} ({{ formatTime(selectionDuration) }} /
+          {{ formatTime(effectiveMaxDuration) }})
         </span>
       </div>
 
@@ -182,6 +187,7 @@ export default {
   setup(props, { emit }) {
     const videoRef = ref(null);
     const timelineRef = ref(null);
+    const progressRef = ref(null);
 
     const videoDuration = ref(0);
     const selectionStart = ref(0);
@@ -191,6 +197,7 @@ export default {
     const currentTime = ref(0);
     const isPlaying = ref(false);
     const isMuted = ref(false);
+    const isScrubbing = ref(false);
 
     const detectIos = () => {
       const frontWindow = typeof wwLib !== 'undefined' && wwLib.getFrontWindow ? wwLib.getFrontWindow() : null;
@@ -208,19 +215,15 @@ export default {
 
     const isIos = ref(detectIos());
 
+    const progressPercent = computed(() => {
+      if (videoDuration.value === 0) return 0;
+      return (currentTime.value / videoDuration.value) * 100;
+    });
+
     const controlsEnabled = computed(() => props.content?.showControls ?? true);
 
     const showNativeControls = computed(() => {
       return controlsEnabled.value && !isIos.value;
-    });
-
-    const showCustomControls = computed(() => {
-      return controlsEnabled.value && isIos.value;
-    });
-
-    const progressPercent = computed(() => {
-      if (videoDuration.value === 0) return 0;
-      return (currentTime.value / videoDuration.value) * 100;
     });
 
     /* wwEditor:start */
@@ -307,7 +310,10 @@ export default {
       return positions;
     });
 
-    const containerStyle = computed(() => ({ width: '100%', height: '100%' }));
+    const containerStyle = computed(() => ({
+      width: '100%',
+      height: '100%',
+    }));
 
     const watermarkGridStyle = computed(() => ({
       '--watermark-opacity': props.content?.watermarkOpacity ?? 0.15,
@@ -350,7 +356,9 @@ export default {
     const formatTime = (seconds) => {
       if (!Number.isFinite(seconds)) return '0:00';
       const mins = Math.floor(seconds / 60);
-      const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
+      const secs = Math.floor(seconds % 60)
+        .toString()
+        .padStart(2, '0');
       return `${mins}:${secs}`;
     };
 
@@ -410,14 +418,52 @@ export default {
       const video = videoRef.value;
       if (!video) return;
       const clamped = Math.max(0, Math.min(time, videoDuration.value));
-      try { video.currentTime = clamped; } catch {}
+      try {
+        video.currentTime = clamped;
+      } catch {}
     };
 
     const updateVideoPreview = (time) => {
       const video = videoRef.value;
       if (!video) return;
       const clamped = Math.max(0, Math.min(time, videoDuration.value));
-      try { video.currentTime = clamped; } catch {}
+      try {
+        video.currentTime = clamped;
+      } catch {}
+    };
+
+    const setVideoTimeFromClientX = (clientX) => {
+      const video = videoRef.value;
+      const el = progressRef.value;
+      if (!video || !el || videoDuration.value === 0) return;
+
+      const rect = el.getBoundingClientRect();
+      const x = Math.max(rect.left, Math.min(clientX, rect.right));
+      const percent = rect.width > 0 ? (x - rect.left) / rect.width : 0;
+      const newTime = percent * videoDuration.value;
+
+      video.currentTime = Math.max(0, Math.min(newTime, videoDuration.value));
+      currentTime.value = video.currentTime;
+    };
+
+    const onProgressPointerDown = (e) => {
+      if (!e || videoDuration.value === 0) return;
+      isScrubbing.value = true;
+
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {}
+
+      setVideoTimeFromClientX(e.clientX);
+    };
+
+    const onProgressPointerMove = (e) => {
+      if (!isScrubbing.value) return;
+      setVideoTimeFromClientX(e.clientX);
+    };
+
+    const onProgressPointerUp = () => {
+      isScrubbing.value = false;
     };
 
     const handleVideoLoaded = (event) => {
@@ -426,15 +472,16 @@ export default {
       setVideoReady(true);
       errorMessage.value = '';
 
-      isMuted.value = !!video.muted;
-
       const initialStart = props.content?.initialStartTime ?? 0;
       const initialDuration = Math.min(props.content?.maxCutDuration ?? 10, videoDuration.value);
       updateSelection(initialStart, initialDuration, false);
 
       emit('trigger-event', {
         name: 'video-loaded',
-        event: { duration: videoDuration.value, videoUrl: props.content?.videoUrl || '' },
+        event: {
+          duration: videoDuration.value,
+          videoUrl: props.content?.videoUrl || '',
+        },
       });
     };
 
@@ -475,17 +522,6 @@ export default {
       if (!video) return;
       video.muted = !video.muted;
       isMuted.value = video.muted;
-    };
-
-    const seekVideo = (event) => {
-      const video = videoRef.value;
-      if (!video || videoDuration.value === 0) return;
-
-      const rect = event.currentTarget.getBoundingClientRect();
-      const percent = (event.clientX - rect.left) / rect.width;
-      const newTime = percent * videoDuration.value;
-
-      video.currentTime = Math.max(0, Math.min(newTime, videoDuration.value));
     };
 
     const handleTimelineClick = (event) => {
@@ -557,18 +593,12 @@ export default {
         const newStart = dragState.value.initialStart + deltaTime;
         updateSelection(newStart, dragState.value.initialDuration, false);
         updateVideoPreview(Math.max(0, Math.min(newStart, videoDuration.value)));
-        return;
-      }
-
-      if (dragState.value.type === 'start') {
+      } else if (dragState.value.type === 'start') {
         const newStart = dragState.value.initialStart + deltaTime;
         const newDuration = dragState.value.initialDuration - deltaTime;
         updateSelection(newStart, newDuration, false);
         updateVideoPreview(Math.max(0, Math.min(newStart, videoDuration.value)));
-        return;
-      }
-
-      if (dragState.value.type === 'end') {
+      } else if (dragState.value.type === 'end') {
         const newDuration = dragState.value.initialDuration + deltaTime;
         updateSelection(dragState.value.initialStart, newDuration, false);
         const endTime = dragState.value.initialStart + newDuration;
@@ -602,8 +632,18 @@ export default {
 
     const handleStartInput = (event) => {
       const input = event.target;
+      const oldValue = input.value;
+      const cursorPosition = input.selectionStart;
+
       const masked = applyTimeMask(input.value);
       input.value = masked;
+
+      if (event.data && cursorPosition) {
+        const colonsBefore = (oldValue.substring(0, cursorPosition).match(/:/g) || []).length;
+        const colonsAfter = (masked.substring(0, cursorPosition).match(/:/g) || []).length;
+        const newCursorPosition = cursorPosition + (colonsAfter - colonsBefore);
+        input.setSelectionRange(newCursorPosition, newCursorPosition);
+      }
 
       const parsed = parseTimeInput(masked);
       if (parsed !== null) {
@@ -641,17 +681,24 @@ export default {
 
     const handleEndInput = (event) => {
       const input = event.target;
+      const oldValue = input.value;
+      const cursorPosition = input.selectionStart;
+
       const masked = applyTimeMask(input.value);
       input.value = masked;
 
+      if (event.data && cursorPosition) {
+        const colonsBefore = (oldValue.substring(0, cursorPosition).match(/:/g) || []).length;
+        const colonsAfter = (masked.substring(0, cursorPosition).match(/:/g) || []).length;
+        const newCursorPosition = cursorPosition + (colonsAfter - colonsBefore);
+        input.setSelectionRange(newCursorPosition, newCursorPosition);
+      }
+
       const parsed = parseTimeInput(masked);
       if (parsed !== null) {
-        const clampedEnd = Math.max(
-          selectionStart.value + effectiveMinDuration.value,
-          Math.min(parsed, videoDuration.value)
-        );
-
+        const clampedEnd = Math.max(selectionStart.value + effectiveMinDuration.value, Math.min(parsed, videoDuration.value));
         let newDuration = clampedEnd - selectionStart.value;
+
         if (newDuration > effectiveMaxDuration.value) newDuration = effectiveMaxDuration.value;
         newDuration = Math.max(effectiveMinDuration.value, Math.min(newDuration, effectiveMaxDuration.value));
 
@@ -663,12 +710,9 @@ export default {
     const handleEndBlur = (event) => {
       const parsed = parseTimeInput(event.target.value);
       if (parsed !== null) {
-        const clampedEnd = Math.max(
-          selectionStart.value + effectiveMinDuration.value,
-          Math.min(parsed, videoDuration.value)
-        );
-
+        const clampedEnd = Math.max(selectionStart.value + effectiveMinDuration.value, Math.min(parsed, videoDuration.value));
         let newDuration = clampedEnd - selectionStart.value;
+
         if (newDuration > effectiveMaxDuration.value) newDuration = effectiveMaxDuration.value;
         newDuration = Math.max(effectiveMinDuration.value, Math.min(newDuration, effectiveMaxDuration.value));
 
@@ -678,49 +722,57 @@ export default {
       }
     };
 
-    watch(() => props.content?.videoUrl, () => {
-      videoDuration.value = 0;
-      selectionStart.value = 0;
-      selectionDuration.value = props.content?.maxCutDuration ?? 10;
-      errorMessage.value = '';
-      setVideoReady(false);
-      currentTime.value = 0;
-      isPlaying.value = false;
-    });
-
-    watch(() => props.content?.initialStartTime, (newValue) => {
-      if (typeof newValue === 'number' && videoDuration.value > 0) {
-        updateSelection(newValue, selectionDuration.value, false);
+    watch(
+      () => props.content?.videoUrl,
+      () => {
+        videoDuration.value = 0;
+        selectionStart.value = 0;
+        selectionDuration.value = props.content?.maxCutDuration ?? 10;
+        errorMessage.value = '';
+        setVideoReady(false);
       }
-    });
+    );
 
-    watch(() => props.content?.maxCutDuration, (newMax) => {
-      if (typeof newMax === 'number' && videoDuration.value > 0) {
-        if (selectionDuration.value > newMax) updateSelection(selectionStart.value, newMax);
+    watch(
+      () => props.content?.initialStartTime,
+      (newValue) => {
+        if (typeof newValue === 'number' && videoDuration.value > 0) {
+          updateSelection(newValue, selectionDuration.value, false);
+        }
       }
-    });
+    );
+
+    watch(
+      () => props.content?.maxCutDuration,
+      (newMax) => {
+        if (typeof newMax === 'number' && videoDuration.value > 0) {
+          if (selectionDuration.value > newMax) updateSelection(selectionStart.value, newMax);
+        }
+      }
+    );
 
     onMounted(() => {
       const nextIsIos = detectIos();
       if (nextIsIos !== isIos.value) isIos.value = nextIsIos;
 
-      const fw = wwLib.getFrontWindow();
-      fw.addEventListener('pointermove', handlePointerMove);
-      fw.addEventListener('pointerup', handlePointerUp);
-      fw.addEventListener('pointercancel', handlePointerUp);
+      const w = wwLib.getFrontWindow();
+      w.addEventListener('pointermove', handlePointerMove);
+      w.addEventListener('pointerup', handlePointerUp);
+      w.addEventListener('pointercancel', handlePointerUp);
     });
 
     onBeforeUnmount(() => {
-      const fw = wwLib.getFrontWindow();
-      fw.removeEventListener('pointermove', handlePointerMove);
-      fw.removeEventListener('pointerup', handlePointerUp);
-      fw.removeEventListener('pointercancel', handlePointerUp);
+      const w = wwLib.getFrontWindow();
+      w.removeEventListener('pointermove', handlePointerMove);
+      w.removeEventListener('pointerup', handlePointerUp);
+      w.removeEventListener('pointercancel', handlePointerUp);
     });
 
     return {
       props,
       videoRef,
       timelineRef,
+      progressRef,
       videoDuration,
       selectionStart,
       selectionDuration,
@@ -732,7 +784,6 @@ export default {
       isIos,
       controlsEnabled,
       showNativeControls,
-      showCustomControls,
       progressPercent,
       gridWatermarkPositions,
       gridSpacing,
@@ -757,7 +808,6 @@ export default {
       togglePlayPause,
       handleWrapperClick,
       toggleMute,
-      seekVideo,
       handleTimelineClick,
       handleStartDrag,
       handleEndDrag,
@@ -766,6 +816,9 @@ export default {
       handleStartBlur,
       handleEndInput,
       handleEndBlur,
+      onProgressPointerDown,
+      onProgressPointerMove,
+      onProgressPointerUp,
       /* wwEditor:start */
       isEditing,
       /* wwEditor:end */
@@ -790,11 +843,6 @@ export default {
   width: 100%;
   background: #000;
   cursor: pointer;
-
-  /* Isso ajuda muito no iOS: cria stacking context previsível */
-  isolation: isolate;
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
 }
 
 .video-element {
@@ -804,34 +852,132 @@ export default {
   max-height: 70vh;
   object-fit: contain;
   position: relative;
-  z-index: 0;
+  z-index: 1;
 
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
+  &::-webkit-media-controls-fullscreen-button {
+    display: none !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
+
+  &::-webkit-media-controls-picture-in-picture-button {
+    display: none !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
+
+  &::-webkit-media-controls-start-playback-button {
+    display: none !important;
+  }
+
+  &:-webkit-full-screen {
+    display: none !important;
+  }
+
+  &:fullscreen {
+    display: none !important;
+  }
 }
 
-/* No iOS, quando usamos controles custom, o vídeo não pode roubar tap/camada */
-.video-cut-player.use-custom-controls .video-element {
+.custom-controls {
+  display: none;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
+  padding: 20px 16px 12px;
+  opacity: 1;
+  z-index: 1000000;
+  pointer-events: auto;
+}
+
+.video-cut-player.use-custom-controls .custom-controls {
+  display: block;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .video-cut-player.controls-enabled .custom-controls {
+    display: block;
+  }
+}
+
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.control-btn {
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, opacity 0.2s;
+  opacity: 0.9;
+
+  &:hover {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+
+  svg {
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+  }
+}
+
+.time-display {
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: monospace;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  min-width: 45px;
+  text-align: center;
+}
+
+.progress-bar-container {
+  flex: 1;
+  padding: 12px 0;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.progress-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  overflow: visible;
+  position: relative;
+}
+
+.progress-filled {
+  height: 100%;
+  background: #007AFF;
+  border-radius: 999px;
+}
+
+.progress-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
   pointer-events: none;
 }
 
-/* Custom Controls sempre acima */
-.custom-controls {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 3;
-  pointer-events: auto;
-
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
-  padding: 20px 16px 12px;
-
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
-}
-
-/* Watermark acima do vídeo, mas abaixo dos controles */
 .watermark-grid {
   position: absolute;
   top: 0;
@@ -840,13 +986,15 @@ export default {
   height: 100%;
   pointer-events: none;
   overflow: hidden;
-  z-index: 2;
-
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
+  z-index: 999999;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  will-change: transform;
 }
 
-.watermark-grid * { pointer-events: none; }
+.watermark-grid * {
+  pointer-events: none;
+}
 
 .watermark-svg {
   position: absolute;
@@ -871,58 +1019,10 @@ export default {
   letter-spacing: 0.5px;
 }
 
-.controls-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.timeline-container {
+  padding: 16px;
+  background: #1a1a1a;
 }
-
-.control-btn {
-  background: none;
-  border: none;
-  padding: 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.2s, opacity 0.2s;
-  opacity: 0.9;
-
-  &:active { transform: scale(0.95); }
-}
-
-.time-display {
-  color: white;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: monospace;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-  min-width: 45px;
-  text-align: center;
-}
-
-.progress-bar-container {
-  flex: 1;
-  padding: 8px 0;
-  cursor: pointer;
-}
-
-.progress-bar {
-  height: 4px;
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 2px;
-  overflow: hidden;
-  position: relative;
-}
-
-.progress-filled {
-  height: 100%;
-  background: #007AFF;
-  border-radius: 2px;
-  transition: width 0.1s linear;
-}
-
-.timeline-container { padding: 16px; background: #1a1a1a; }
 
 .timeline-info {
   display: flex;
@@ -933,6 +1033,11 @@ export default {
   border-radius: 6px;
   font-size: 13px;
   font-family: monospace;
+}
+
+.duration-label {
+  font-weight: 500;
+  text-align: center;
 }
 
 .timeline-track {
@@ -952,6 +1057,11 @@ export default {
   opacity: 0.4;
   border-radius: 4px;
   cursor: move;
+  transition: opacity 0.2s;
+}
+
+.timeline-selection:hover {
+  opacity: 0.6;
 }
 
 .timeline-handle {
@@ -965,6 +1075,23 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+  will-change: transform;
+}
+
+.timeline-handle:hover {
+  transform: translateY(-50%) translateX(-50%) scale(1.15);
+  box-shadow: 0 3px 12px rgba(0, 122, 255, 0.4);
+}
+
+.timeline-handle.end {
+  transform: translateY(-50%) translateX(-50%);
+}
+
+.timeline-handle.end:hover {
+  transform: translateY(-50%) translateX(-50%) scale(1.15);
+  box-shadow: 0 3px 12px rgba(0, 122, 255, 0.4);
 }
 
 .handle-grip {
@@ -1007,6 +1134,22 @@ export default {
   font-weight: 600;
   font-family: monospace;
   text-align: center;
+  transition: all 0.2s;
+
+  &::placeholder {
+    color: #555;
+  }
+
+  &:focus {
+    outline: none;
+    border-color: #007aff;
+    background: #333;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+  }
+
+  &:hover:not(:focus) {
+    border-color: #4a4a4a;
+  }
 }
 
 .message-overlay {
@@ -1019,18 +1162,78 @@ export default {
   padding: 20px 30px;
   border-radius: 8px;
   text-align: center;
-  z-index: 50;
+  z-index: 100;
   pointer-events: none;
-}
 
-.message-overlay.error {
-  background: rgba(220, 38, 38, 0.9);
+  p {
+    margin: 0;
+    font-size: 16px;
+  }
+
+  &.error {
+    background: rgba(220, 38, 38, 0.9);
+  }
 }
 
 @media (max-width: 768px) {
-  .custom-controls { padding: 16px 12px 10px; }
-  .controls-row { gap: 8px; }
-  .time-display { font-size: 11px; min-width: 38px; }
-  .time-inputs { grid-template-columns: 1fr; gap: 8px; }
+  .custom-controls {
+    padding: 16px 12px 10px;
+  }
+
+  .controls-row {
+    gap: 8px;
+  }
+
+  .control-btn {
+    padding: 6px;
+
+    svg {
+      width: 20px;
+      height: 20px;
+    }
+  }
+
+  .time-display {
+    font-size: 11px;
+    min-width: 38px;
+  }
+
+  .progress-bar-container {
+    padding: 12px 0;
+  }
+
+  .progress-bar {
+    height: 6px;
+  }
+
+  .timeline-info {
+    font-size: 11px;
+    padding: 6px 8px;
+  }
+
+  .timeline-handle {
+    width: 24px;
+    height: 48px;
+  }
+
+  .time-inputs {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .time-input-group {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .time-input-label {
+    min-width: 50px;
+  }
+
+  .time-input {
+    padding: 10px 12px;
+    font-size: 16px;
+  }
 }
 </style>
