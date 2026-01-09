@@ -673,6 +673,8 @@ export default {
         newDuration = Math.max(effectiveMinDuration.value, Math.min(newDuration, maxDurationFromStart));
 
         updateSelection(clampedStart, newDuration);
+        // Move o vídeo para a nova posição de início
+        updateVideoPreview(clampedStart);
       } else {
         event.target.value = formatTimeInput(selectionStart.value);
       }
@@ -740,6 +742,8 @@ export default {
         newDuration = Math.max(effectiveMinDuration.value, Math.min(newDuration, effectiveMaxDuration.value));
 
         updateSelection(selectionStart.value, newDuration);
+        // Move o vídeo para a nova posição final
+        updateVideoPreview(selectionStart.value + newDuration);
       } else {
         event.target.value = formatTimeInput(selectionEnd.value);
       }
@@ -772,13 +776,13 @@ export default {
       if (!isEditingStartTime.value && startInputRef.value) {
         startInputRef.value.value = formatTimeInput(newValue);
       }
-    });
+    }, { immediate: true });
 
     watch(selectionEnd, (newValue) => {
       if (!isEditingEndTime.value && endInputRef.value) {
         endInputRef.value.value = formatTimeInput(newValue);
       }
-    });
+    }, { immediate: true });
 
     onMounted(() => {
       const nextIsIos = detectIos();
