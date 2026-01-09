@@ -137,9 +137,9 @@
         <div class="time-input-group">
           <label class="time-input-label">Início</label>
           <input
+            ref="startInputRef"
             type="text"
             class="time-input"
-            :value="isEditingStartTime ? undefined : formatTimeInput(selectionStart)"
             @focus="handleStartFocus"
             @input="handleStartInput"
             @blur="handleStartBlur"
@@ -151,9 +151,9 @@
         <div class="time-input-group">
           <label class="time-input-label">Fim</label>
           <input
+            ref="endInputRef"
             type="text"
             class="time-input"
-            :value="isEditingEndTime ? undefined : formatTimeInput(selectionEnd)"
             @focus="handleEndFocus"
             @input="handleEndInput"
             @blur="handleEndBlur"
@@ -188,6 +188,8 @@ export default {
   setup(props, { emit }) {
     const videoRef = ref(null);
     const timelineRef = ref(null);
+    const startInputRef = ref(null);
+    const endInputRef = ref(null);
 
     const videoDuration = ref(0);
     const selectionStart = ref(0);
@@ -765,9 +767,30 @@ export default {
       }
     });
 
+    // Watchers para atualizar inputs manualmente (bypass Vue reactivity para iOS)
+    watch(selectionStart, (newValue) => {
+      if (!isEditingStartTime.value && startInputRef.value) {
+        startInputRef.value.value = formatTimeInput(newValue);
+      }
+    });
+
+    watch(selectionEnd, (newValue) => {
+      if (!isEditingEndTime.value && endInputRef.value) {
+        endInputRef.value.value = formatTimeInput(newValue);
+      }
+    });
+
     onMounted(() => {
       const nextIsIos = detectIos();
       if (nextIsIos !== isIos.value) isIos.value = nextIsIos;
+
+      // Inicializa valores dos inputs manualmente
+      if (startInputRef.value) {
+        startInputRef.value.value = formatTimeInput(selectionStart.value);
+      }
+      if (endInputRef.value) {
+        endInputRef.value.value = formatTimeInput(selectionEnd.value);
+      }
 
       const fw = wwLib.getFrontWindow();
       fw.addEventListener('pointermove', handlePointerMove);
@@ -791,6 +814,8 @@ export default {
       props,
       videoRef,
       timelineRef,
+      startInputRef,
+      endInputRef,
       videoDuration,
       selectionStart,
       selectionDuration,
