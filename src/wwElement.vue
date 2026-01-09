@@ -139,7 +139,7 @@
           <input
             type="text"
             class="time-input"
-            :value="formatTimeInput(selectionStart)"
+            :value="isEditingStartTime ? undefined : formatTimeInput(selectionStart)"
             @focus="handleStartFocus"
             @input="handleStartInput"
             @blur="handleStartBlur"
@@ -153,7 +153,7 @@
           <input
             type="text"
             class="time-input"
-            :value="formatTimeInput(selectionEnd)"
+            :value="isEditingEndTime ? undefined : formatTimeInput(selectionEnd)"
             @focus="handleEndFocus"
             @input="handleEndInput"
             @blur="handleEndBlur"
@@ -611,7 +611,12 @@ export default {
 
     const handleStartFocus = (event) => {
       isEditingStartTime.value = true;
-      event.target.select(); // Seleciona todo o texto para facilitar substituição
+      // Define o valor atual manualmente para evitar conflitos
+      event.target.value = formatTimeInput(selectionStart.value);
+      // Pequeno delay para garantir que o valor foi definido antes de selecionar
+      setTimeout(() => {
+        event.target.select();
+      }, 10);
     };
 
     const handleStartInput = (event) => {
@@ -673,7 +678,12 @@ export default {
 
     const handleEndFocus = (event) => {
       isEditingEndTime.value = true;
-      event.target.select(); // Seleciona todo o texto para facilitar substituição
+      // Define o valor atual manualmente para evitar conflitos
+      event.target.value = formatTimeInput(selectionEnd.value);
+      // Pequeno delay para garantir que o valor foi definido antes de selecionar
+      setTimeout(() => {
+        event.target.select();
+      }, 10);
     };
 
     const handleEndInput = (event) => {
@@ -789,6 +799,8 @@ export default {
       currentTime,
       isPlaying,
       isMuted,
+      isEditingStartTime,
+      isEditingEndTime,
       isIos,
       controlsEnabled,
       showNativeControls,
