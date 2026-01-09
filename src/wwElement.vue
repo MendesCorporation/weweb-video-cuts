@@ -443,6 +443,16 @@ export default {
       const initialDuration = Math.min(props.content?.maxCutDuration ?? 10, videoDuration.value);
       updateSelection(initialStart, initialDuration, false);
 
+      // Atualiza os inputs manualmente após o vídeo carregar
+      setTimeout(() => {
+        if (startInputRef.value) {
+          startInputRef.value.value = formatTimeInput(selectionStart.value);
+        }
+        if (endInputRef.value) {
+          endInputRef.value.value = formatTimeInput(selectionEnd.value);
+        }
+      }, 100);
+
       emit('trigger-event', {
         name: 'video-loaded',
         event: { duration: videoDuration.value, videoUrl: props.content?.videoUrl || '' },
@@ -776,25 +786,27 @@ export default {
       if (!isEditingStartTime.value && startInputRef.value) {
         startInputRef.value.value = formatTimeInput(newValue);
       }
-    }, { immediate: true });
+    });
 
     watch(selectionEnd, (newValue) => {
       if (!isEditingEndTime.value && endInputRef.value) {
         endInputRef.value.value = formatTimeInput(newValue);
       }
-    }, { immediate: true });
+    });
 
     onMounted(() => {
       const nextIsIos = detectIos();
       if (nextIsIos !== isIos.value) isIos.value = nextIsIos;
 
-      // Inicializa valores dos inputs manualmente
-      if (startInputRef.value) {
-        startInputRef.value.value = formatTimeInput(selectionStart.value);
-      }
-      if (endInputRef.value) {
-        endInputRef.value.value = formatTimeInput(selectionEnd.value);
-      }
+      // Inicializa valores dos inputs manualmente com delay para garantir que os refs existam
+      setTimeout(() => {
+        if (startInputRef.value) {
+          startInputRef.value.value = formatTimeInput(selectionStart.value);
+        }
+        if (endInputRef.value) {
+          endInputRef.value.value = formatTimeInput(selectionEnd.value);
+        }
+      }, 50);
 
       const fw = wwLib.getFrontWindow();
       fw.addEventListener('pointermove', handlePointerMove);
