@@ -685,6 +685,13 @@ export default {
         updateSelection(clampedStart, newDuration);
         // Move o vídeo para a nova posição de início
         updateVideoPreview(clampedStart);
+
+        // Atualiza o input com o valor corrigido
+        setTimeout(() => {
+          if (startInputRef.value) {
+            startInputRef.value.value = formatTimeInput(selectionStart.value);
+          }
+        }, 10);
       } else {
         event.target.value = formatTimeInput(selectionStart.value);
       }
@@ -754,6 +761,13 @@ export default {
         updateSelection(selectionStart.value, newDuration);
         // Move o vídeo para a nova posição final
         updateVideoPreview(selectionStart.value + newDuration);
+
+        // Atualiza o input com o valor corrigido
+        setTimeout(() => {
+          if (endInputRef.value) {
+            endInputRef.value.value = formatTimeInput(selectionEnd.value);
+          }
+        }, 10);
       } else {
         event.target.value = formatTimeInput(selectionEnd.value);
       }
